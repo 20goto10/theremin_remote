@@ -12,9 +12,17 @@ Not working:
 - mouse buttons (whouldn't be hard to set up)
 
 Roadmap:
-- whatever improvements I think of
+- more Curl options (the commands for controlling a stereo, for example)
+- toggles and multi-switches (e.g. check the state before sending the command)
+- scenes and what-not
+- whatever other improvements I think of
 
-Preqrequisites:
+Most such changes are trivial modifications to the Ruby code.
+
+Contributing:
+I'll be very happy if you submit PRs with more functionality to build off this base. It's not a complicated piece of code; I only wrote this because it didn't seem to exist already.
+
+Prerequisites:
 - You probably won't find much use for this without a wireless, external keyboard and/or mouse.
  
 ```
@@ -24,7 +32,10 @@ gem install rest-client
 ```
 
 Setup:
-- Edit the config.json file. Mostly it should be self-explanatory. The most important thing is to get the device ID of your mouse and keyboard correctly, and the light IDs on HA-bridge. Depending on your set-up the username may need to change.  
+- Edit the config.json file. Mostly it should be self-explanatory. The most important thing is to get the device ID of your mouse and keyboard correctly, and the light IDs on HA-bridge. Depending on your set-up the username may need to change, and depending on your setup, the ha_bridge_url value. If you have the keyboard/mouse on the same machine that's running HA-Bridge you should be fine with "localhost". 
+- Physically you'll want to check the range of your remote and make sure that whatever PC/Raspberry/etc. is running this script is within range of your remote keyboard and has connectivity to your ha-bridge server.
+- You may also want to disable the surplus devices as actual X Inputs so that you can't accidentally run anything using the remote.
+
 
 Run:
 
