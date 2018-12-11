@@ -4,14 +4,27 @@ require 'json'
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
+BRIGHTNESS_SYNC_PERIOD = 20
 
 @px = 0.0
 @py = 0.0
 @mouse_cmd_set = []
 @keyboard_actions = []
+@brightness ||= {} 
 
 def mapped_keys
   @mapped_keys ||= CONFIGURATION['keyboard_bindings'].flat_map { |mapping| mapping['key'] }
+end
+
+def get_brightness
+  result = RestClient.send('get', "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights", {content_type: :json, accept: :json})
+  JSON.parse(result.body).each do |k,v|
+    @brightness[k.to_i] = v['state']['bri']
+  end
+end
+
+def make_dimmer_call(light, intensity)
+  call = ['put', "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", {'bri': intensity}.to_json, {content_type: :json, accept: :json}]
 end
 
 def make_color_call(light, values)
@@ -19,11 +32,15 @@ def make_color_call(light, values)
 end
 
 def make_power_call(light, on_state)
+  @brightness[light] = 0 if !on_state
   call = ['put', "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", {'on': on_state}.to_json, {content_type: :json, accept: :json}]
 end
 
 def make_the_call(data)
-  Thread.new { RestClient.send(data[0].to_sym, data[1], data[2], data[3]) }
+  Thread.new do
+    call_type = data.shift.to_sym
+    RestClient.send(call_type, *data) 
+  end
 end
 
 def exec_mouse_queue
@@ -39,6 +56,7 @@ def exec_mouse_queue
 end
 
 def exec_keyboard_queue
+  a = BRIGHTNESS_SYNC_PERIOD 
   loop do
     # replace this with direct curl commands and clean callbacks and rescues for when it fails...
     if @keyboard_actions.any?
@@ -46,6 +64,11 @@ def exec_keyboard_queue
       kbd_cmd = @keyboard_actions.shift
       puts "Keyboard command: #{kbd_cmd}" 
       make_the_call(kbd_cmd)
+      a -= 1
+      if a == 0
+        a = BRIGHTNESS_SYNC_PERIOD 
+        get_brightness
+      end
     end 
   end
 end
@@ -55,7 +78,14 @@ def perform_action_for(key)
   bindings.each do |binding|
     if binding['type'] == 'ha-bridge' 
       binding['lights'].each do |light|
-        @keyboard_actions << make_power_call(light, binding['action'] == 'on') 
+        if binding['action'] == 'on' || binding['action'] == 'off' 
+          @keyboard_actions << make_power_call(light, binding['action'] == 'on') 
+        elsif binding['action'] == 'dim'
+          @brightness[light] += binding['value']
+          @brightness[light] = 254 if @brightness[light] > 254
+          @brightness[light] = 0 if @brightness[light] < 0
+          @keyboard_actions << make_dimmer_call(light, @brightness[light]) 
+        end 
       end
     end
   end
@@ -101,6 +131,8 @@ def keyboard_input_monitor
   end
 end
 
+get_brightness
+pp @brightness
 puts "Bound keys: #{mapped_keys.join(",")}"
 t1 = Thread.new{exec_mouse_queue} unless CONFIGURATION['mouse_disabled']
 t2 = Thread.new{exec_keyboard_queue} unless CONFIGURATION['keyboard_disabled']
