@@ -9,13 +9,16 @@ Working:
 - using Trackpad to control XY-colorspace 
 
 Not working: 
-- mouse buttons (whouldn't be hard to set up)
+- mouse buttons (wouldn't be hard to set up)
 
 Roadmap:
 - more Curl options (the commands for controlling a stereo, for example)
 - toggles and multi-switches (e.g. check the state before sending the command)
+- option to allow range shifts of color (so your colors can be subtly different)
 - scenes and what-not
 - whatever other improvements I think of
+- set up as a service 
+- instructions for keeping the input devices from doing stuff in X itself
 
 Most such changes are trivial modifications to the Ruby code.
 
@@ -24,6 +27,8 @@ I'll be very happy if you submit PRs with more functionality to build off this b
 
 Prerequisites:
 - You probably won't find much use for this without a wireless, external keyboard and/or mouse.
+- You need to use jruby
+- You need read permissions on the input device. You can either do this by running the script with sudo, or chmodding/chowning the input device permissions. 
  
 ```
 gem install device_input
