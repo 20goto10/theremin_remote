@@ -11,10 +11,9 @@ DEBUG = !!CONFIGURATION['debug']
 
 # use two clients because the MOUSE client should wipe out any existing connections each time it sends
 CLIENTS = {
-  'keyboard' => Manticore::Client.new,
-  'mouse' => Manticore::Client.new
+  'keyboard' => Manticore::Client.new(request_timeout: 3, connect_timeout: 5, socket_timeout: 4, pool_max: 15, pool_max_per_route: 2),
+  'mouse' => Manticore::Client.new(request_timeout: 3, connect_timeout: 5, socket_timeout: 4, pool_max: 15, pool_max_per_route: 2)
 }
-# (request_timeout: 2, connect_timeout: 2, socket_timeout: 8, pool_max: 12, pool_max_per_route: 1)
 
 @px = 0.0
 @py = 0.0
@@ -26,7 +25,7 @@ def mapped_keys
 end
 
 def get_state
-  result = CLIENTS['keyboard'].get("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights").call
+  result = Manticore.get("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
   JSON.parse(result.body).each do |k,v|
     @color[k.to_i] = v['state']['xy']
     @brightness[k.to_i] = v['state']['bri']
@@ -72,11 +71,16 @@ def perform_action_for(key, code = 0)
         if binding['action'] == 'on' || binding['action'] == 'off' 
           keyboard_actions = binding['lights'].collect { |light| make_power_call(light, binding['action'] == 'on') } 
         elsif binding['action'] == 'dim'
-          get_state
           keyboard_actions = binding['lights'].collect do |light| 
             @brightness[light] += binding['value']
             @brightness[light] = min_max(@brightness[light], 0, 254)
-            make_dimmer_call(light, @brightness[light])
+            make_dimmer_call(light, @brightness[light].to_i)
+          end 
+	elsif binding['action'] == 'dim_multiply'
+          keyboard_actions = binding['lights'].collect do |light| 
+            @brightness[light] *= (binding['value'] || 0.5)
+            @brightness[light] = min_max(@brightness[light], (binding['value'].to_f >= 1 ? 16 : 0), 254) # if binding-value is > 1, we mean to raise the brightness, so don't let the outcome be 0
+            make_dimmer_call(light, @brightness[light].to_i)
           end 
         elsif binding['action'] == 'random'
           keyboard_actions = binding['lights'].collect { |light| make_color_call(light, [rand(), rand()]) }
