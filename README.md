@@ -26,6 +26,10 @@ Roadmap:
 
 Most such changes are trivial modifications to the Ruby code.
 
+My architecture:
+[ THEREMIN ] -> [ HA-Bridge ] --> pass-thru for anything intended for an actual Philips Hue
+                              \-> everything else gets passed through OpenHAB2
+
 Contributing:
 I'll be very happy if you submit PRs with more functionality to build off this base. It's not a complicated piece of code; I only wrote this because it didn't seem to exist already.
 
@@ -35,7 +39,9 @@ Prerequisites:
 - I have no idea if this will work in non-Linux environment... it would probably work on a Mac, but I doubt it would work under Windows.
 - You need to use Jruby, not regular Ruby, since it is required by Manticore, the underlying API request library (chosen for speed).
 - You need read permissions on the input device. You can either do this by running the script as root (sudo ruby theremin.rb), or chmodding/chowning the input device permissions. Note if you do the latter that the device permissions will be reset at reboot or whenever you unplug/replug the input device. 
- 
+- You need some sort of target for the requests. What I have here is based on a modified HA-Bridge-- modified in that I added HSL colorspace support, which HA-Bridge is supposed to pass onto OpenHAB. At the time of this writing it is an open pull request at ha-bridge, awaiting review... You can just pull it in and compile it locally. https://github.com/bwssytems/ha-bridge/pull/1028 and then you can use ${color.hsl} in your colorization requests to HA-Bridge.
+
+Ruby Prerequisites: 
 ```
 gem install manticore
 gem install device_input
