@@ -25,18 +25,32 @@ def mapped_keys
 end
 
 def color_of(key)
-  @state[key.to_i]['xy']
+  @state.dig(key.to_i, 'xy') || 0
 end
 
 def brightness_of(key)
-  @state[key.to_i]['bri']
+  @state.dig(key.to_i, 'bri') || 254
+end
+
+def is_on?(key)
+  @state.dig(key.to_i, 'on') || false
+end
+
+def is_off?(key)
+  !is_on?(key)
+end
+
+def has_color?(key)
+  @state.has_key?(key) && @state[key].has_key?('xy')
 end
 
 def set_color(key,value)
-  @state[key.to_i]['xy'] = value if value.is_a?(Array) && value.length == 2 && value.all { |v| v.is_a?(Float) }
+  @state[key.to_i] ||= {}
+  @state[key.to_i]['xy'] = value if value.is_a?(Array) && value.length == 2 && value.all? { |v| v.is_a?(Float) }
 end
 
 def set_brightness(key,value)
+  @state[key.to_i] ||= {}
   @state[key.to_i]['bri'] = value.to_i
 end
 
@@ -74,37 +88,59 @@ def parallel_calls(datas, client_key)
     end
   end
   CLIENTS[client_key].execute! 
-rescue => e
-  puts e.message if DEBUG
 end
 
 def perform_action_for(key, code = 0)
   bindings = CONFIGURATION['keyboard_bindings'].select { |item| item['key'] == key || (item['key'].is_a?(Array) && item['key'].include?(key)) }
-  keyboard_actions = []
+  actions = []
   bindings.each do |binding|
+    puts "Executing: #{binding['name']}" if binding['name'] && DEBUG
     if code == 0 # binding['repeatable'] # TODO: repeating requires awareness of when the key goes down and when up
       if binding['type'] == 'ha-bridge' 
         if binding['action'] == 'on' || binding['action'] == 'off' 
-          keyboard_actions = binding['lights'].collect { |light| make_power_call(light, binding['action'] == 'on') } 
+          actions = binding['lights'].collect { |light| make_power_call(light, binding['action'] == 'on') } 
         elsif binding['action'] == 'dim'
-          keyboard_actions = binding['lights'].collect do |light| 
+          get_state
+          actions = binding['lights'].collect do |light| 
             t_bri = brightness_of(light) + (binding['value']  || 0.5)
             set_brightness(light, min_max(t_bri, 0, 254))
             make_dimmer_call(light, brightness_of(light).to_i)
           end 
 	elsif binding['action'] == 'dim_multiply'
-          keyboard_actions = binding['lights'].collect do |light| 
+          get_state
+          actions = binding['lights'].collect do |light| 
             t_bri = brightness_of(light) * (binding['value'] || 0.5)
             set_brightness(light, min_max(t_bri, (binding['value'].to_f >= 1 ? 16 : 0), 254)) # if binding-value is > 1, we mean to raise the brightness, so never let the outcome be 0
             make_dimmer_call(light, brightness_of(light))
           end 
         elsif binding['action'] == 'random'
-          keyboard_actions = binding['lights'].collect { |light| make_color_call(light, [rand(), rand()]) }
+          actions = binding['lights'].collect { |light| make_color_call(light, [rand(), rand()]) }
+        elsif binding['action'] == 'white' || binding['action'] == 'color'
+          col = [0.33333333333, 0.33333333333] 
+          if binding['action'] == 'color'
+            col[0] = binding['x'] if binding['x'] 
+            col[1] = binding['y'] if binding['y'] 
+          end
+          get_state
+          actions = binding['lights'].collect do |light| 
+            if has_color?(light)
+              make_color_call(light, col)
+            elsif binding['switches_on']
+              make_power_call(light, true)
+            end
+          end.compact
+        elsif binding['action'] == 'toggle'
+          # Generally you wouldn't want to actually toggle everything, but rather set them all to the same thing.
+          # So, this determines first if any of the lights are currently on, and if so, it turns them off.
+          # Otherwise it turns them all on.
+          get_state
+          anything_on = binding['lights'].any? { |light| is_on?(light) }
+          actions = binding['lights'].collect { |light| make_power_call(light, !anything_on) } 
         elsif binding['action'] == 'rotate'
+          get_state
           target_lights = (binding['reversed'] ? binding['lights'].reverse : binding['lights'])
-          get_state  
           color = color_of(target_lights.last)
-          keyboard_actions = target_lights.collect do |light| 
+          actions = target_lights.collect do |light| 
             new_color_xy = color
             color = color_of(light)
 	    puts "#{light}: #{new_color_xy} / old color #{color}"
@@ -115,7 +151,7 @@ def perform_action_for(key, code = 0)
       end
     end
   end
-  keyboard_actions
+  actions
 end
 
 def min_max(val,min,max) 
@@ -140,15 +176,15 @@ def input_monitor(device)
 	    new_x = new_y = 0
             if (event.code == "X")
               new_x = color_of(light)[0] + (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
-	      new_y = color_of(light)[1]
+              new_y = color_of(light)[1]
             end
             if (event.code == "Y")
-	      new_x = color_of(light,0)
-              new_y = color_of(light,1) - (event.data.value.to_f / CONFIGURATION['max_y_resolution']) # the operator is a - because Y is inverted (0,0 is the top left corner)
+              new_x = color_of(light)[0]
+              new_y = color_of(light)[1] - (event.data.value.to_f / CONFIGURATION['max_y_resolution']) # the operator is a - because Y is inverted (0,0 is the top left corner)
             end
 	    if CONFIGURATION['drift']
-	      new_x += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
-	      new_y += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
+              new_x += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
+              new_y += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
             end 
             new_xy = [min_max(new_x,0,1.0),min_max(new_y,0,1.0)] 
 	    set_color(light, new_xy)
@@ -162,8 +198,8 @@ def input_monitor(device)
 end
 
 def start
-  get_state
   puts "Bound keys: #{mapped_keys.join(",")}" if DEBUG
+  get_state
   threads = []
   DEVICES.each_index do |i|
     threads.push(Thread.new(i) do 

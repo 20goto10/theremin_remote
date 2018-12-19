@@ -65,6 +65,7 @@ done
 
 Setup:
 - Edit the config.json file. Mostly it should be self-explanatory. The most important thing is to get the device ID of your mouse and keyboard correctly, and the light IDs on HA-bridge. Depending on your set-up the username may need to change, and depending on your setup, the ha_bridge_url value. If you have the keyboard/mouse on the same machine that's running HA-Bridge you should be fine with "localhost". 
+- Your results will probably be screwy if you include switches instead of color bulbs in commands that rely on color (e.g. random, rotate, and the like), or color assignments to dimmer lights. 
 - Physically you'll want to check the range of your remote and make sure that whatever PC/Raspberry/etc. is running this script is within range of your remote keyboard and has connectivity to your ha-bridge server.
 - You will probably also want to disable the surplus devices as actual X Inputs so that you can't accidentally do something crazy using the remote. Or you could just not run X11 in the first place. Disable the Xinputs is pretty straightforward.
 
@@ -74,4 +75,5 @@ Run:
 ```
 ruby theremin.rb # you may need sudo if you haven't changed your device permissions
 ```
+
 
