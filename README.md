@@ -3,7 +3,7 @@ A simple system for converting input devices (e.g. mice, keyboards, etc.) into r
 
 The project is nicknamed "Theremin" because, as it stands now, you can use the touchpad to control home lights much the way a trained musician plays a theremin (except that you do have to touch the touchpad). Anyway, it maps the X & Y coordinates of the touchpad into the XY color space (aka CIE 1931), so you wind up with a sort of two-dimensional dimmer switch. The button controls are really just a bonus. 
 
-This is a work in progress. The purpose was to take a $15 miniature keyboard-and-trackpad combo, tie it into HA-Bridge and OpenHAB2, and mount it on the wall near my front door to control all my "smart lights" from one place without having to talk out loud to my furniture (e.g. Alexa). I also wanted to use the mini-keyboard's built-in trackpad as a color selector for my entire apartment, which consists of various different brands of lights (a major factor in the need for HA-Bridge and OpenHAB2 et al.).
+This is a work in progress. The purpose was to take a $15 miniature keyboard-and-trackpad combo, tie it into HA-Bridge and/or OpenHAB2, and mount it on the wall near my front door to control all my "smart lights" from one place without having to talk out loud to my furniture (e.g. Alexa). I also wanted to use the mini-keyboard's built-in trackpad as a color selector for my entire apartment, which consists of various different brands of lights (a major factor in the need for HA-Bridge and OpenHAB2 et al.).
 
 Working:
 - button mapping
@@ -11,11 +11,13 @@ Working:
 - using Trackpad to control XY-colorspace 
 - color randomization and rotation
 - multiple input devices
+- direct connection support for HA-bridge or directly to OpenHAB2 (the second seems faster, more reliable, and generally more color-intense!)
 
 Not working: 
 - mouse buttons (wouldn't be hard to set up)
 
 Roadmap:
+- finish full OpenHAB support for all commands
 - more Curl options (the commands for controlling a stereo, for example)
 - toggles (e.g. check the state before sending the command)
 - multi-switch toggles 
@@ -26,10 +28,6 @@ Roadmap:
 
 Most such changes are trivial modifications to the Ruby code.
 
-My architecture:
-[ THEREMIN ] -> [ HA-Bridge ] --> pass-thru for anything intended for an actual Philips Hue
-                              \-> everything else gets passed through OpenHAB2
-
 Contributing:
 I'll be very happy if you submit PRs with more functionality to build off this base. It's not a complicated piece of code; I only wrote this because it didn't seem to exist already.
 
@@ -39,7 +37,7 @@ Prerequisites:
 - I have no idea if this will work in non-Linux environment... it would probably work on a Mac, but I doubt it would work under Windows.
 - You need to use Jruby, not regular Ruby, since it is required by Manticore, the underlying API request library (chosen for speed).
 - You need read permissions on the input device. You can either do this by running the script as root (sudo ruby theremin.rb), or chmodding/chowning the input device permissions. Note if you do the latter that the device permissions will be reset at reboot or whenever you unplug/replug the input device. 
-- You need some sort of target for the requests. What I have here is based on a modified HA-Bridge-- modified in that I added HSL colorspace support, which HA-Bridge is supposed to pass onto OpenHAB. At the time of this writing it is an open pull request at ha-bridge, awaiting review... You can just pull it in and compile it locally. https://github.com/bwssytems/ha-bridge/pull/1028 and then you can use ${color.hsl} in your colorization requests to HA-Bridge.
+- You need some sort of target for the requests. My code is based on a modified HA-Bridge-- modified in that I added HSL colorspace support, which HA-Bridge is supposed to pass onto OpenHAB. At the time of this writing it is an open pull request at ha-bridge, awaiting review... You can just pull it in and compile it locally. https://github.com/bwssytems/ha-bridge/pull/1028 and then you can use ${color.hsl} in your colorization requests to HA-Bridge. HOWEVER, as of 12/19/2018 I've added support for OpenHAB2 directly (though it is a work-in-progress) which seems better overall, and obviates any need for the CIE 1931 / a.k.a. XY colorspace which is just a nightmare to handle anyway.
 
 Ruby Prerequisites: 
 ```
@@ -48,7 +46,7 @@ gem install device_input
 gem install json
 ```
 
-Update the config.json before you run the script. Light IDs should correspond to those in your HA-Bridge. 
+Copy the config.json.example to config.json, and modify it to your Openhab2 and/or HABridge settings before you run the script. The mode option must be 'openhab', anything else is currently treated as 'ha_bridge'. If using the ha_bridge mode, light IDs should correspond to those in your HA-Bridge. Otherwise you must also set mappings for the lights in the section called 'openhab_devices' to correspond to the IDs for your commands. Someday maybe I will add a GUI.
 
 I've included a script, disable_devices.sh, for disabling Xinputs (note that you must modify it as your DEVICE string is probably different; to figure it out, try ```DISPLAY=:0 xinput list```). In my case, all the devices come up as "2.4G Composite Devic" [sic] ... that's what comes up for at least two different makes of these cheapo mini-keyboards, so it might be pretty common. 
 

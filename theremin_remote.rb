@@ -5,16 +5,25 @@ require 'json'
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
 BRIGHTNESS_SYNC_PERIOD = 20
-MAX_CONCURRENT_REQUESTS = 8
+MAX_CONCURRENT_REQUESTS = 14
 REPEAT_DELAY = 20
 DEBUG = !!CONFIGURATION['debug']
 DEVICES = CONFIGURATION['devices']
 MODE = CONFIGURATION['mode'] # "openhab" or "ha_bridge" 
 
+HUE_RANGE = 360 # can't imagine this changing
+SATURATION_RANGE = 100
+MAX_BRIGHTNESS = (MODE == 'openhab' ? 99 : 254) # 99 b/c of wizlights bug
+
+# for openhab HSB mapping
+HUE = 0
+SATURATION = 1
+BRIGHTNESS = 2
+
 # use two clients because the MOUSE client should wipe out any existing connections each time it sends
 CLIENTS = {
-  'keyboard' => Manticore::Client.new(request_timeout: 3, connect_timeout: 5, socket_timeout: 4, pool_max: 15, pool_max_per_route: 2),
-  'mouse' => Manticore::Client.new(request_timeout: 3, connect_timeout: 5, socket_timeout: 4, pool_max: 15, pool_max_per_route: 2)
+  'keyboard' => Manticore::Client.new(request_timeout: 5, connect_timeout: 2, socket_timeout: 2, pool_max: 15, pool_max_per_route: 5),
+  'mouse' => Manticore::Client.new(request_timeout: 5, connect_timeout: 2, socket_timeout: 2, pool_max: 15, pool_max_per_route: 5)
 }
 
 @px = 0.0
@@ -25,12 +34,46 @@ def mapped_keys
   @mapped_keys ||= CONFIGURATION['keyboard_bindings'].flat_map { |mapping| mapping['key'] }
 end
 
+def from_hsb(text)
+  text.split(',') # maps to HUE,SATURATION,BRIGHTNESS
+end
+          
+def random_color
+  if MODE == 'openhab'
+    random_color = [(rand() * HUE_RANGE).to_i,
+                    (rand() * SATURATION_RANGE).to_i,
+                    "99"].join(",") # TODO: this should really be the existing brightness
+  else
+    random_color = [rand(), rand()]
+  end
+end
+
+def openhab_device_map_for(items)
+  CONFIGURATION['openhab_devices'].select { |dev| dev } # TODO 
+end
+
 def color_of(key)
-  @state.dig(key.to_i, 'xy') || 0
+  if MODE == 'openhab'
+    @state.dig(key.to_i, 'color', HUE)
+  else
+    @state.dig(key.to_i, 'xy') || 0
+  end
+end
+
+def saturation_of(key)
+  if MODE == 'openhab'
+    @state.dig(key.to_i, 'color', SATURATION)  
+  else
+    MAX_SATURATION
+  end
 end
 
 def brightness_of(key)
-  @state.dig(key.to_i, 'bri') || 254
+  if MODE == 'openhab'
+    @state.dig(key.to_i, 'color', BRIGHTNESS) || MAX_BRIGHTNESS
+  else
+    @state.dig(key.to_i, 'bri') || MAX_BRIGHTNESS
+  end
 end
 
 def is_on?(key)
@@ -42,46 +85,100 @@ def is_off?(key)
 end
 
 def has_color?(key)
-  @state.has_key?(key) && @state[key].has_key?('xy')
+  @state.has_key?(key) && (@state[key].has_key?('xy') || @state[key].has_key('color'))
 end
 
 def set_color(key,value)
   @state[key.to_i] ||= {}
-  @state[key.to_i]['xy'] = value if value.is_a?(Array) && value.length == 2 && value.all? { |v| v.is_a?(Float) }
+  if MODE == 'openhab'
+    @state[key.to_i]['color'][HUE] = value 
+  else
+    @state[key.to_i]['xy'] = value if value.is_a?(Array) && value.length == 2 && value.all? { |v| v.is_a?(Float) }
+  end
+end
+
+def set_saturation(key,value)
+  @state[key.to_i] ||= {}
+  if MODE == 'openhab'
+    @state[key.to_i]['color'] ||= {} 
+    @state[key.to_i]['color'][SATURATION] = value.to_i
+  else
+    @state[key.to_i]['bri'] = value.to_i
+  end
 end
 
 def set_brightness(key,value)
   @state[key.to_i] ||= {}
-  @state[key.to_i]['bri'] = value.to_i
+  if MODE == 'openhab'
+    @state[key.to_i]['color'] ||= {} 
+    @state[key.to_i]['color'][BRIGHTNESS] = value.to_i
+  else
+    @state[key.to_i]['bri'] = value.to_i
+  end
 end
 
 def get_state
   puts "Getting state..." if DEBUG
-  result = Manticore.get("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
-  JSON.parse(result.body).each do |k,v|
-    @state[k.to_i] = v['state']
+  if MODE == 'openhab'
+    CONFIGURATION['openhab_devices'].each do |device|
+      result = Manticore.get("#{CONFIGURATION['openhab_url']}/rest/items/#{device['name']}/state")
+      @state[device['id']] = { color: result.body.split(",") } # TODO: on/off
+    end
+  else
+    result = Manticore.get("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
+    JSON.parse(result.body).each do |k,v|
+      @state[k.to_i] = v['state']
+    end
   end
 end
 
+def openhab_mapping_for(light)
+  # provide the label for openhab lights, for the URL, otherwise return self
+  CONFIGURATION['openhab_devices'].detect { |dev| dev['id'] == light }['name']
+end
+
 def make_dimmer_call(light, intensity)
-  ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'bri': intensity }.to_json }]
+  if MODE == 'openhab'
+    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: min_max(intensity,0,intensity) }]
+  else
+    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'bri': intensity }.to_json }]
+  end
+rescue
+  nil
 end
 
 def make_color_call(light, values)
-  ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'xy': values }.to_json }]
+  if MODE == 'openhab'
+    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: values }]
+  else
+    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'xy': values }.to_json }]
+  end
+rescue
+  nil
 end
 
 def make_power_call(light, on_state)
-  set_brightness(light, 0) if !on_state
-  ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'on': on_state }.to_json }]
+  if MODE == 'openhab'
+    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: (on_state ? "ON" : "OFF" ) }]
+  else
+    set_brightness(light, 0) if !on_state
+    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'on': on_state }.to_json }]
+  end
+rescue
+  nil
 end
 
 def parallel_calls(datas, client_key)
   if client_key == 'mouse'
     CLIENTS[client_key].clear_pending
   end
-  datas.each do |data|
-    response = CLIENTS[client_key].background.parallel.put(*data)
+  datas.compact.each do |data|
+    puts "Making call: #{data.join}" if DEBUG
+    if MODE == 'openhab'
+      response = CLIENTS[client_key].background.parallel.post(*data)
+    else
+      response = CLIENTS[client_key].background.parallel.put(*data)
+    end
     response.on_success do |response|
       puts "SUCCESS: #{JSON.parse(response.body)}" if DEBUG 
     end.on_failure do |response|
@@ -104,18 +201,18 @@ def perform_action_for(key, code = 0)
           get_state
           actions = binding['lights'].collect do |light| 
             t_bri = brightness_of(light) + (binding['value']  || 0.5)
-            set_brightness(light, min_max(t_bri, 0, 254))
+            set_brightness(light, min_max(t_bri, 0, MAX_BRIGHTNESS))
             make_dimmer_call(light, brightness_of(light).to_i)
           end 
 	elsif binding['action'] == 'dim_multiply'
           get_state
           actions = binding['lights'].collect do |light| 
             t_bri = brightness_of(light) * (binding['value'] || 0.5)
-            set_brightness(light, min_max(t_bri, (binding['value'].to_f >= 1 ? 16 : 0), 254)) # if binding-value is > 1, we mean to raise the brightness, so never let the outcome be 0
+            set_brightness(light, min_max(t_bri, (binding['value'].to_f >= 1 ? 16 : 0), MAX_BRIGHTNESS)) # if binding-value is > 1, we mean to raise the brightness, so never let the outcome be 0
             make_dimmer_call(light, brightness_of(light))
           end 
         elsif binding['action'] == 'random'
-          actions = binding['lights'].collect { |light| make_color_call(light, [rand(), rand()]) }
+          actions = binding['lights'].collect { |light| make_color_call(light, random_color) }
         elsif binding['action'] == 'white' || binding['action'] == 'color'
           col = [0.33333333333, 0.33333333333] 
           if binding['action'] == 'color'

@@ -47,7 +47,7 @@
 		          "type": "ha-bridge",
                           "action": "toggle",
                           "lights": [12,13,14] },
-			{ "name": "Everything on",
+			{ "name": "Everything off",
                           "key": ["Slash","PageDown","Space"],
 		          "type": "ha-bridge",
                           "action" :"off",
@@ -223,10 +223,91 @@
 			  "y": 0.55,
                           "lights": [1,2,3,4,5,6,7,8,9,10,11] }
 ],
-  "openhab_devices": [
-    { "label": "stage light", 
-      "id": 1 ,
-      "name": "wizlighting_wizBulb_123456_color",
-      "type": "color" },
-]}
+"openhab_devices": [
+{
+  "id": 1,
+  "name": "wizlighting_wizBulb_abababababab_color",
+  "type": "color",
+  "label": "stage light"
+},
+{
+  "id": 2,
+  "name": "wizlighting_wizBulb_123456789012_color",
+  "type": "color",
+  "label": "door light"
+},
+{
+  "id": 3,
+  "name": "wizlighting_wizBulb_deadbeeffeed_color",
+  "type": "color",
+  "label": "couch light"
+},
+{
+  "id": 4,
+  "name": "tplinksmarthome_lb130_abc123_color",
+  "type": "color",
+  "label": "dining room"
+},
+{
+  "id": 5,
+  "name": "tplinksmarthome_lb130_abc123_color",
+  "type": "color",
+  "label": "bathroom left"
+},
+{
+  "id": 6,
+  "name": "tplinksmarthome_lb130_abc123_color",
+  "type": "color",
+  "label": "bathroom middle"
+},
+{
+  "id": 7,
+  "name": "tplinksmarthome_lb130_abc123_color",
+  "type": "color",
+  "label": "bathroom right"
+},
+{
+  "id": 8,
+  "name": "hue_0210_abcd1234_1_color",
+  "type": "color",
+  "label": "inner hallway"
+},
+{
+  "id": 9,
+  "name": "hue_0210_abcd1234_2_color",
+  "type": "color",
+  "label": "outer hallway"
+},
+{
+  "id": 10,
+  "name": "wifiled_wifiled_abcdef123456_color",
+  "type": "color",
+  "label": "LED strip"
+},
+{
+  "id": 11,
+  "name": "wizlighting_wizBulb_abcdef123456_color",
+  "type": "color",
+  "label": "bedside light"
+},
+{
+  "id": 12,
+  "name": "wemo_socket_Socket_1_0_XXXXXXXXXXXXXX_state",
+  "type": "color",
+  "label": "neon sign"
+},
+{
+  "id": 13,
+  "name": "wemo_socket_Socket_1_0_XXXXXXXXXXXXXX_state",
+  "type": "color",
+  "label": "lp player"
+},
+{
+  "id": 14,
+  "name": "wemo_socket_Socket_1_0_XXXXXXXXXXXXXX_state",
+  "type": "color",
+  "label": "movie poster"
+}
+]
+}
 
