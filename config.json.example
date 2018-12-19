@@ -9,6 +9,8 @@
   "keyboard_disabled": false,
   "max_x_resolution": 64.0,
   "max_y_resolution": 48.0,
+  "mode": "openhab",
+  "openhab_url": "http://192.168.1.127:8080",
   "ha_bridge_url": "http://192.168.1.127",
   "ha_bridge_username": "random_junk",
   "drift": 0.003,
@@ -220,4 +222,11 @@
 			  "x": 0.3, 
 			  "y": 0.55,
                           "lights": [1,2,3,4,5,6,7,8,9,10,11] }
+],
+  "openhab_devices": [
+    { "label": "stage light", 
+      "id": 1 ,
+      "name": "wizlighting_wizBulb_123456_color",
+      "type": "color" },
 ]}
+

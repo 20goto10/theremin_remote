@@ -9,6 +9,7 @@ MAX_CONCURRENT_REQUESTS = 8
 REPEAT_DELAY = 20
 DEBUG = !!CONFIGURATION['debug']
 DEVICES = CONFIGURATION['devices']
+MODE = CONFIGURATION['mode'] # "openhab" or "ha_bridge" 
 
 # use two clients because the MOUSE client should wipe out any existing connections each time it sends
 CLIENTS = {
