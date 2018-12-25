@@ -111,11 +111,11 @@
                           "key": ["G"],
                           "action": "off",
                           "lights": [5,6,7] },
-			{ "key": ["K"],
+			{ "key": ["I"],
                           "action": "rotate",
 			  "reversed": true,
                           "lights": [5,6,7] },
-			{ "key": ["L"],
+			{ "key": ["O"],
                           "action": "rotate",
                           "lights": [5,6,7] },
 			{ "name": "Everything to white (or on)",
@@ -169,12 +169,12 @@
 			  "y": 0.25,
                           "h": 300, "s": 100, "b": 100,
                           "lights": [1,2,3,4,5,6,7,8,9,10,15,16,17] },
-			{ "name": "Everything to light pink",
+			{ "name": "Everything to turquoise",
                           "key": ["4"],
                           "action": "color",
 			  "x": 0.45, 
 			  "y": 0.15,
-                          "h": 300, "s": 10, "b": 100,
+                          "h": 180, "s": 100, "b": 100,
                           "lights": [1,2,3,4,5,6,7,8,9,10,15,16,17] },
 			{ "name": "Everything to lemon-lime",
                           "key": ["5"],
@@ -263,7 +263,50 @@
 			  "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
 			  "method": "post",
                           "body": "PAUSE"
-			}
+			},
+			{ "name": "Put on LuxuriaMusic",
+                          "key": "L",
+                          "action": "custom",
+                          "chain": [
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_power",
+                                       "method": "post",
+                                       "body": "ON" },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_input",
+                                       "method": "post",
+                                       "body": "40",
+                                       "delay": 1.0 },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
+                                       "method": "post",
+                                       "body": "Select0",
+                                       "delay": 1.0 },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
+                                       "method": "post",
+                                       "body": "Select0",
+                                       "delay": 1.0 },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
+                                       "method": "post",
+                                       "body": "Select0",
+                                       "delay": 1.0 },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
+                                       "method": "post",
+                                       "body": "Select0",
+                                       "delay": 1.0 },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_control",
+                                       "method": "post",
+                                       "body": "Select0",
+                                       "delay": 1.0 }]
+                        },
+			{ "name": "Put on Radio Tuner",
+                          "key": "F",
+                          "action": "custom",
+                          "chain": [
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_power",
+                                       "method": "post",
+                                       "body": "ON" },
+                                     { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_input",
+                                       "method": "post",
+                                       "body": "38" }]
+                        }
 ],
 "openhab_devices": [
 {
@@ -367,7 +410,5 @@
   "name": "openhab_device_id_power",
   "type": "switch",
   "label": "stereo"
-}
-]
-}
+}]}
 

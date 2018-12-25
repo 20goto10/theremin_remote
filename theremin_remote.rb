@@ -215,6 +215,7 @@ def perform_action_for(key, code = 0)
     if code == 0 # binding['repeatable'] # TODO: repeating requires awareness of when the key goes down and when up
       puts "Executing: #{binding['name']}" if binding['name'] && DEBUG
       if binding['action'] == 'on' || binding['action'] == 'off' 
+        get_state
         actions = binding['lights'].collect do |light| 
           set_on_off(light, binding['action'] == 'on')
           make_power_call(light, binding['action'] == 'on')  
@@ -236,7 +237,6 @@ def perform_action_for(key, code = 0)
       elsif binding['action'] == 'random'
         actions = binding['lights'].collect { |light| make_color_call(light, random_color(light)) }
       elsif binding['action'] == 'white' || binding['action'] == 'color'
-
         if MODE == 'ha_bridge'
           col = [0.33333333333, 0.33333333333] 
           if binding['action'] == 'color'
@@ -290,7 +290,11 @@ def perform_action_for(key, code = 0)
           new_state = binding['body']
         end
         puts "New state will be #{new_state}" if DEBUG
-        Manticore.send((binding['method'] || 'post').to_sym, binding['url'], { body: new_state.to_s }).call
+        chain = binding['chain'] ? binding['chain'] : [binding] 
+        chain.each do |item|
+          Manticore.send((item['method'] || 'post').to_sym, item['url'], { body: (item['body'] || new_state).to_s  }).call
+          sleep(item['delay'] || 0.2)
+        end
       end
     end
   end
