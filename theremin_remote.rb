@@ -3,7 +3,7 @@ require 'device_input'
 require 'manticore'
 require 'json'
 
-VERSION = 0.21
+VERSION = 0.22
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
@@ -281,13 +281,12 @@ def perform_action_for(key, code = 0)
           make_color_call(light, new_color_xy)
         end
       elsif binding['action'] == 'custom'
-        puts "Custom action #{binding['eval']}" if DEBUG
+        new_state = binding['body']
         if binding['state_url']
+          puts "Custom action #{binding['eval']}" if DEBUG
           state = JSON.parse(Manticore.send((binding['state_method'] || 'get').to_sym, binding['state_url']).body)[(binding['state_variable'] || 'state')]
           puts "Current state is #{state}" if DEBUG
           new_state = eval(binding['eval'])
-        else
-          new_state = binding['body']
         end
         puts "New state will be #{new_state}" if DEBUG
         chain = binding['chain'] ? binding['chain'] : [binding] 
