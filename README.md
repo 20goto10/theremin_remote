@@ -12,10 +12,15 @@ This is a work in progress. The purpose was to take a $15 miniature keyboard-and
 - color randomization and rotation
 - multiple input devices
 - direct connection support for HA-bridge or directly to OpenHAB2 (the second seems faster, more reliable, and generally more color-intense!)
-- custom request/toggle commands
+- custom request/toggle commands (acting against a received state) - this is a little primitive for now, but works ok with Openhab
+- arbitrary commands ("exec" -- I use this to run [advanced eISCP commands via Python](https://github.com/miracle2k/onkyo-eiscp) on my Onkyo stereo, e.g. for FM and Internet Radio presets, since OpenHAB is not supporting them yet)
+
+## Security warning:
+- The "exec" and "eval" commands in my config script could allow arbitrary code execution if for some weird reason you were to run a config file you didn't write yourself. I can't imagine anyone doing that, but thought I should mention it.
 
 ## Roadmap:
-- Jruby as root user installation instructions
+- user guide (if people are actually interested in Theremin Remote at all)
+- Jruby installation instructions
 - scenes and what-not
 - whatever other improvements I think of
 - fun programming routines for the lights (make 'em dance)
@@ -59,6 +64,9 @@ Section "InputClass"
    Option             "Ignore" "on"
 EndSection
 ```
+
+## A bit of miscellany:
+- I've included a simple script, internet_radio_preset.sh, which simply writes a counter so you can step through internet radio presets on devices that don't support it (e.g. the Onkyo NR-626). It is really somewhat out-of-scope for this project, but it hardly merits its own repo either.
 
 ## Setup:
 - Copy the config.json.example file to config.json. Mostly it should be self-explanatory. The most important thing is to get the device ID of your mouse and keyboard correctly, and the light IDs on HA-bridge. Depending on your set-up the username may need to change, and depending on your setup, the ha_bridge_url value. If you have the keyboard/mouse on the same machine that's running HA-Bridge you should be fine with "localhost". 

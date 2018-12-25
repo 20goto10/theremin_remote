@@ -3,7 +3,7 @@ require 'device_input'
 require 'manticore'
 require 'json'
 
-VERSION = 0.22
+VERSION = 0.23
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
@@ -68,6 +68,23 @@ def color_of(key)
     @state.dig(key.to_i, 'color', HUE).to_f
   else
     @state.dig(key.to_i, 'xy') || 0
+  end
+end
+
+def all_values_of(key)
+  if MODE == 'openhab'
+    @state.dig(key.to_i, 'color')
+  else
+    @state.dig(key.to_i, 'xy') || 0
+  end
+end
+
+def set_values(key, values)
+  @state[key.to_i] ||= {}
+  if MODE == 'openhab'
+    @state[key.to_i]['color'] = values
+  else
+    @state[key.to_i]['xy'] = values
   end
 end
 
@@ -272,13 +289,12 @@ def perform_action_for(key, code = 0)
       elsif binding['action'] == 'rotate'
         get_state
         target_lights = (binding['reversed'] ? binding['lights'].reverse : binding['lights'])
-        color = color_of(target_lights.last)
+        values = all_values_of(target_lights.last)
         actions = target_lights.collect do |light| 
-          new_color_xy = color
-          color = color_of(light)
-	  puts "#{light}: #{new_color_xy} / old color #{color}"
-          set_color(light, new_color_xy)
-          make_color_call(light, new_color_xy)
+          new_values = values
+          values = all_values_of(light)
+          set_values(light, new_values)
+          make_color_call(light, MODE == 'openhab' ? new_values.to_hsl : new_values)
         end
       elsif binding['action'] == 'custom'
         new_state = binding['body']
@@ -291,8 +307,12 @@ def perform_action_for(key, code = 0)
         puts "New state will be #{new_state}" if DEBUG
         chain = binding['chain'] ? binding['chain'] : [binding] 
         chain.each do |item|
-          Manticore.send((item['method'] || 'post').to_sym, item['url'], { body: (item['body'] || new_state).to_s  }).call
-          sleep(item['delay'] || 0.2)
+          if item['url']
+            Manticore.send((item['method'] || 'post').to_sym, item['url'], { body: (item['body'] || new_state).to_s  }).call
+          elsif item['exec']
+            system(item['exec'])
+          end
+          sleep(item['delay'] || 0.1)
         end
       end
     end
