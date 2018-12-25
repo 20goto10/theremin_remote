@@ -1,0 +1,13 @@
+[Unit]
+Description=Theremin Remote
+Requires=display-manager.service openhab2.service
+After=display-manager.service openhab2.service
+
+[Service]
+ExecStart=/bin/bash -c "cd /home/whoever/theremin_remote; ./run_theremin.sh"
+
+[Service]
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
