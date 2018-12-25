@@ -275,7 +275,7 @@
                                        "method": "post",
                                        "body": "40",
                                        "delay": 2.0 },
-                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx dock.internet-radio-preset=3" }
+                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx dock.internet-radio-preset=`./internet_radio_preset.sh 3` &" }
                                    ]
                         },
 			{ "name": "Put on LuxuriaMusic",
@@ -289,7 +289,7 @@
                                        "method": "post",
                                        "body": "40",
                                        "delay": 2.0 },
-                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx dock.internet-radio-preset=1" }
+                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx dock.internet-radio-preset=`./internet_radio_preset.sh 1` &" }
                                    ]
                         },
 			{ "name": "Put on WNYC",
@@ -300,7 +300,7 @@
                                        "method": "post",
                                        "body": "ON" },
                                      { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.input-selector=FM" },
-                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.preset=1" }
+                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.preset=1 &" }
                                    ]
                         },
 			{ "name": "Put on WBGO",
@@ -310,10 +310,22 @@
                                      { "url": "http://192.168.1.xxx:8080/rest/items/openhab_device_id_power",
                                        "method": "post",
                                        "body": "ON" },
-                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.input-selector=FM" },
+                                     { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.input-selector=FM &" },
                                      { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.preset=2" }
                                    ]
-                        }
+                        },
+			{ "name": "Previous Preset",
+                          "key": "LeftBrace",
+                          "action": "custom",
+                          "chain": [ { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.preset=down &" },
+                                     { "exec": "/usr/local/bin/onkyo dock.internet-radio-preset=`./internet_radio_preset.sh down`" } ]
+		        },
+			{ "name": "Next Preset",
+                          "key": "RightBrace",
+                          "action": "custom",
+                          "chain": [ { "exec": "/usr/local/bin/onkyo --host 192.168.1.xxx main.preset=up &" },
+                                     { "exec": "/usr/local/bin/onkyo dock.internet-radio-preset=`./internet_radio_preset.sh up`" } ]
+		        }	
 ],
 "openhab_devices": [
 {
