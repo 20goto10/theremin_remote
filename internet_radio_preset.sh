@@ -1,6 +1,6 @@
 #!/bin/bash
-# Script for stepping through Internet radio presets on an Onkyo-626 which does not have this functionality.
-# MAX should be set to the highest number preset you have, and MIN should probably be 1. 
+# Script for stepping through Internet radio presets (or any similar counter) on an Onkyo-626 which does not have this functionality.
+# MAX should be set to the highest number preset you have, and MIN should probably be 1.  
 FILENAME=internet_radio_preset.txt
 MAX=32
 MIN=1

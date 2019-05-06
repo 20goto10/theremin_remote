@@ -1,9 +1,12 @@
 require 'rubygems'
 require 'device_input'
-require 'manticore'
+require 'curb'
 require 'json'
 
-VERSION = 0.23
+require 'ffi'
+require 'ffi/tools/const_generator'
+
+VERSION = 0.24
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
@@ -18,15 +21,28 @@ HUE_RANGE = 360 # can't imagine this changing
 SATURATION_RANGE = 100
 MAX_BRIGHTNESS = (MODE == 'openhab' ? 100 : 255) 
 
+# curl options
+CURL_EASY_OPTIONS = {:follow_location => true}
+CURL_MULTI_OPTIONS = {:pipeline => Curl::CURLPIPE_HTTP1}
+
 # for openhab HSB mapping
 HUE = 0
 SATURATION = 1
 BRIGHTNESS = 2
 
+# get the EVIOCGRAB constant
+cg = FFI::ConstGenerator.new('input') do |gen|
+  gen.include('linux/input.h')
+  gen.const(:EVIOCGRAB, '%u', '(unsigned)')
+end
+EVIOCGRAB = cg['EVIOCGRAB'].to_i
+
+
 # use two clients because the MOUSE client should wipe out any existing connections each time it sends
+# this probably needs to go
 CLIENTS = {
-  'keyboard' => Manticore::Client.new(request_timeout: 5, connect_timeout: 2, socket_timeout: 2, pool_max: 15, pool_max_per_route: 5),
-  'mouse' => Manticore::Client.new(request_timeout: 5, connect_timeout: 2, socket_timeout: 2, pool_max: 15, pool_max_per_route: 5)
+  'keyboard' => Curl::Multi,
+  'mouse' => Curl::Multi
 }
 
 @px = 0.0
@@ -45,7 +61,7 @@ end
 
 class Array
   def to_hsl
-    self.join(',') # maps to "HUE,SATURATION,BRIGHTNESS"
+    self.map(&:to_i).join(',') # maps to "HUE,SATURATION,BRIGHTNESS"
   end
 end
           
@@ -53,7 +69,7 @@ def random_color(light)
   if MODE == 'openhab'
     random_color = [(rand() * HUE_RANGE).to_i,
                     (rand() * SATURATION_RANGE).to_i,
-                    brightness_of(light)].to_hsl
+		    brightness_of(light)].to_hsl
   else
     random_color = [rand(), rand()]
   end
@@ -65,7 +81,7 @@ end
 
 def color_of(key)
   if MODE == 'openhab'
-    @state.dig(key.to_i, 'color', HUE).to_f
+    @state.dig(key.to_i, 'color', HUE).to_i
   else
     @state.dig(key.to_i, 'xy') || 0
   end
@@ -90,7 +106,7 @@ end
 
 def saturation_of(key)
   if MODE == 'openhab'
-    @state.dig(key.to_i, 'color', SATURATION).to_f  
+    @state.dig(key.to_i, 'color', SATURATION).to_i
   else
     MAX_SATURATION
   end
@@ -98,7 +114,7 @@ end
 
 def brightness_of(key)
   if MODE == 'openhab'
-    (@state.dig(key.to_i, 'color', BRIGHTNESS) || MAX_BRIGHTNESS).to_f
+    (@state.dig(key.to_i, 'color', BRIGHTNESS) || MAX_BRIGHTNESS).to_i
   else
     @state.dig(key.to_i, 'bri') || MAX_BRIGHTNESS
   end
@@ -155,12 +171,12 @@ def get_state
   puts "Getting state..." if DEBUG
   if MODE == 'openhab'
     CONFIGURATION['openhab_devices'].each do |device|
-      result = Manticore.get("#{CONFIGURATION['openhab_url']}/rest/items/#{device['name']}/state")
+      result = Curl::Easy.perform("#{CONFIGURATION['openhab_url']}/rest/items/#{device['name']}/state")
       @state[device['id']] ||= {}
       @state[device['id']].merge!({ 'color' => result.body.split(",") })   # not sure how to get on/off here; will use self as master decider
     end
   else
-    result = Manticore.get("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
+    result = Curl::Easy.perform("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
     JSON.parse(result.body).each do |k,v|
       @state[k.to_i] = v['state']
     end
@@ -174,9 +190,11 @@ end
 
 def make_dimmer_call(light, intensity)
   if MODE == 'openhab'
-    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: [color_of(light), saturation_of(light), intensity].to_hsl }]
+    { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
+      post_fields: [color_of(light), saturation_of(light), intensity].to_hsl }
   else
-    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'bri' => intensity }.to_json }]
+    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
+      post_fields: { 'bri' => intensity }.to_json }
   end
 rescue
   nil
@@ -184,9 +202,11 @@ end
 
 def make_color_call(light, values)
   if MODE == 'openhab'
-    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: values }]
+    { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
+      post_fields: values } 
   else
-    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'xy': values }.to_json }]
+    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
+      post_fields: { 'xy': values }.to_json }
   end
 rescue
   nil
@@ -194,34 +214,31 @@ end
 
 def make_power_call(light, on_state)
   if MODE == 'openhab'
-    ["#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", { body: (on_state ? "ON" : "OFF" ) }]
+   { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
+     post_fields: (on_state ? "ON" : "OFF" ) }
   else
     set_brightness(light, 0) if !on_state
-    ["#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", { body: { 'on': on_state }.to_json }]
+    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
+      post_fields: { 'on': on_state }.to_json } 
   end
 rescue
   nil
 end
 
 def parallel_calls(datas, client_key)
-  if datas
-    if client_key == 'mouse'
-      CLIENTS[client_key].clear_pending
-    end
+  if datas 
+    m = Curl::Multi.new
     datas.compact.each do |data|
-      puts "Making call: #{data.join}" if DEBUG
-      if MODE == 'openhab'
-        response = CLIENTS[client_key].background.parallel.post(*data)
-      else
-        response = CLIENTS[client_key].background.parallel.put(*data)
+      c = Curl::Easy.http_post(data[:url]) do |curl|
+	curl.method('post')
+        curl.follow_location = true
+	curl.post_body = data[:post_fields]
+        curl.headers['Content-Type'] = 'text/plain'
       end
-      response.on_success do |response|
-        puts "SUCCESS: #{JSON.parse(response.body)}" if DEBUG 
-      end.on_failure do |response|
-        puts "FAILED: #{JSON.parse(response.body)}" if DEBUG 
-      end
+      m.add(c)
     end
-    CLIENTS[client_key].execute! 
+
+    m.perform
   end
 end
 
@@ -300,15 +317,15 @@ def perform_action_for(key, code = 0)
         new_state = binding['body']
         if binding['state_url']
           puts "Custom action #{binding['eval']}" if DEBUG
-          state = JSON.parse(Manticore.send((binding['state_method'] || 'get').to_sym, binding['state_url']).body)[(binding['state_variable'] || 'state')]
-          puts "Current state is #{state}" if DEBUG
+          state = JSON.parse(Curl.send((binding['state_method'] || 'get').to_sym, binding['state_url']).body)[(binding['state_variable'] || 'state')]
+	  puts "Current state is #{state}" if DEBUG
           new_state = eval(binding['eval'])
         end
         puts "New state will be #{new_state}" if DEBUG
         chain = binding['chain'] ? binding['chain'] : [binding] 
         chain.each do |item|
           if item['url']
-            Manticore.send((item['method'] || 'post').to_sym, item['url'], { body: (item['body'] || new_state).to_s  }).call
+		  Curl.send((item['method'] || 'post').to_sym, item['url'], (item['body'] || new_state).to_s) { |c| c.headers['Content-Type'] = 'text/plain' }
           elsif item['exec']
             system(item['exec'])
           end
@@ -330,7 +347,7 @@ def mouse_xy(event)
   CONFIGURATION['mouse_binding']['lights'].collect do |light| 
     new_x = new_y = 0
     if (event.code == "X")
-      new_x = color_of(light)[0] + (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
+	    new_x = color_of(light)[0] + (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
       new_y = color_of(light)[1]
     end
     if (event.code == "Y")
@@ -341,7 +358,7 @@ def mouse_xy(event)
       new_x += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
       new_y += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
     end 
-    new_xy = [min_max(new_x,0,1.0),min_max(new_y,0,1.0)] 
+    new_xy = [min_max(new_x,0,1.0).to_i,min_max(new_y,0,1.0).to_i] 
     set_color(light, new_xy)
     make_color_call(light, new_xy)
   end
@@ -374,8 +391,14 @@ def mouse_hsl(event)
 end
 
 def input_monitor(device)
-  File.open(device, 'r') do |dev|
+  if File.readable?(device)
+    dev = File.new(device)
+    begin
+      dev.ioctl(EVIOCGRAB, 1) # prevent other things from listening to the device
+    rescue
+    end
     DeviceInput.read_loop(dev) do |event|
+      puts "Received #{event}"
       if event.type == 'EV_KEY' && !CONFIGURATION['keyboard_disabled'] # KEYBOARD DEVICES
         if mapped_keys.include?(event.code)  
           calls = parallel_calls(perform_action_for(event.code, event.data.value), 'keyboard')
@@ -384,8 +407,11 @@ def input_monitor(device)
         end
       elsif !CONFIGURATION['mouse_disabled']
         puts "Moved by #{event.data.value.to_f}" if (event.code == "X" || event.code == "Y") if DEBUG 
+        puts "Mouse action: #{event}" if DEBUG
 
-        if (['X','Y'].include?(event.code))
+        if event.code == 'Wheel'
+          parallel_calls(perform_action_for("Wheel#{event.data.value == -1 ? "Down" : "Up"}", 0), 'keyboard')
+        elsif (['X','Y'].include?(event.code))
           if CONFIGURATION['mouse_effect'] == 'xy'
             calls = mouse_xy(event)
           elsif CONFIGURATION['mouse_effect'] != 'none'
@@ -395,6 +421,9 @@ def input_monitor(device)
         parallel_calls(calls, 'mouse')
       end
     end
+  else
+    puts "Device #{device} could not be read, skipping"
+    false
   end
 end
 
@@ -406,7 +435,7 @@ def start
       puts "Adding device #{DEVICES[i]}" if DEBUG
       loop do
         begin
-          input_monitor(DEVICES[i])
+          break if !input_monitor(DEVICES[i])
         rescue => e
           puts "** ERROR! #{e.message} **"
           puts e.backtrace.join("\n")
