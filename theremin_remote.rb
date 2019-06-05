@@ -6,7 +6,7 @@ require 'json'
 require 'ffi'
 require 'ffi/tools/const_generator'
 
-VERSION = 0.24
+VERSION = 0.25
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
@@ -188,6 +188,11 @@ def openhab_mapping_for(light)
   CONFIGURATION['openhab_devices'].detect { |dev| dev['id'] == light }['name']
 end
 
+def type_of(light)
+  # provide the label for openhab lights, for the URL, otherwise return self
+  CONFIGURATION['openhab_devices'].detect { |dev| dev['id'] == light }['type']
+end
+
 def make_dimmer_call(light, intensity)
   if MODE == 'openhab'
     { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
@@ -214,8 +219,13 @@ end
 
 def make_power_call(light, on_state)
   if MODE == 'openhab'
-   { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
-     post_fields: (on_state ? "ON" : "OFF" ) }
+    if type_of(light) == 'echo'
+      { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
+        post_fields: (on_state ? "PLAY" : "PAUSE" ) }
+    else
+      { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
+        post_fields: (on_state ? "ON" : "OFF" ) }
+    end
   else
     set_brightness(light, 0) if !on_state
     { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
