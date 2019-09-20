@@ -1,3 +1,9 @@
+Version 0.27
+- Add ability to filter out devices (different actions for specific devices by path)
+
+Version 0.26
+- Add ability to chain together multiple URLs
+
 Version 0.25
 - Add Echo pause/unpause support
 

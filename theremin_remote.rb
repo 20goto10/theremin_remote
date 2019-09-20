@@ -6,7 +6,7 @@ require 'json'
 require 'ffi'
 require 'ffi/tools/const_generator'
 
-VERSION = 0.25
+VERSION = 0.27
 
 config_file = File.read('config.json')
 CONFIGURATION = JSON.parse(config_file)
@@ -19,7 +19,7 @@ MODE = CONFIGURATION['mode'] # "openhab" or "ha_bridge"
 
 HUE_RANGE = 360 # can't imagine this changing
 SATURATION_RANGE = 100
-MAX_BRIGHTNESS = (MODE == 'openhab' ? 100 : 255) 
+MAX_BRIGHTNESS = (MODE == 'openhab' ? 100 : 255)
 
 # curl options
 CURL_EASY_OPTIONS = {:follow_location => true}
@@ -41,8 +41,8 @@ EVIOCGRAB = cg['EVIOCGRAB'].to_i
 # use two clients because the MOUSE client should wipe out any existing connections each time it sends
 # this probably needs to go
 CLIENTS = {
-  'keyboard' => Curl::Multi,
-  'mouse' => Curl::Multi
+    'keyboard' => Curl::Multi,
+    'mouse' => Curl::Multi
 }
 
 @px = 0.0
@@ -64,12 +64,12 @@ class Array
     self.map(&:to_i).join(',') # maps to "HUE,SATURATION,BRIGHTNESS"
   end
 end
-          
+
 def random_color(light)
   if MODE == 'openhab'
     random_color = [(rand() * HUE_RANGE).to_i,
                     (rand() * SATURATION_RANGE).to_i,
-		    brightness_of(light)].to_hsl
+                    brightness_of(light)].to_hsl
   else
     random_color = [rand(), rand()]
   end
@@ -114,7 +114,7 @@ end
 
 def brightness_of(key)
   if MODE == 'openhab'
-    (@state.dig(key.to_i, 'color', BRIGHTNESS) || MAX_BRIGHTNESS).to_i
+    @state.dig(key.to_i, 'color', BRIGHTNESS).to_i
   else
     @state.dig(key.to_i, 'bri') || MAX_BRIGHTNESS
   end
@@ -122,10 +122,11 @@ end
 
 def set_on_off(key, val)
   @state[key.to_i] ||= {}
-  @state[key.to_i]['on'] = !!val 
+  @state[key.to_i]['on'] = !!val
 end
 
 def is_on?(key)
+  puts @state.to_json
   @state.dig(key.to_i, 'on') || false
 end
 
@@ -137,17 +138,17 @@ def has_color?(key)
   @state.has_key?(key) && (@state[key].has_key?('xy') || @state[key].has_key?('color'))
 end
 
-def set_color(key,value)
+def set_color(key, value)
   @state[key.to_i] ||= {}
   if MODE == 'openhab'
     @state[key.to_i]['color'] ||= []
-    @state[key.to_i]['color'][HUE] = value 
+    @state[key.to_i]['color'][HUE] = value
   else
     @state[key.to_i]['xy'] = value if value.is_a?(Array) && value.length == 2 && value.all? { |v| v.is_a?(Float) }
   end
 end
 
-def set_saturation(key,value)
+def set_saturation(key, value)
   @state[key.to_i] ||= {}
   if MODE == 'openhab'
     @state[key.to_i]['color'] ||= []
@@ -157,7 +158,7 @@ def set_saturation(key,value)
   end
 end
 
-def set_brightness(key,value)
+def set_brightness(key, value)
   @state[key.to_i] ||= {}
   if MODE == 'openhab'
     @state[key.to_i]['color'] ||= []
@@ -173,11 +174,15 @@ def get_state
     CONFIGURATION['openhab_devices'].each do |device|
       result = Curl::Easy.perform("#{CONFIGURATION['openhab_url']}/rest/items/#{device['name']}/state")
       @state[device['id']] ||= {}
-      @state[device['id']].merge!({ 'color' => result.body.split(",") })   # not sure how to get on/off here; will use self as master decider
+      if device['type'] == 'color'
+        tcolor = result.body.split(",")
+        @state[device['id']].merge!({'color' => tcolor})
+        @state[device['id']]['on'] = (@state[device['id']]['color'][BRIGHTNESS].to_i != 0)
+      end
     end
   else
     result = Curl::Easy.perform("#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights")
-    JSON.parse(result.body).each do |k,v|
+    JSON.parse(result.body).each do |k, v|
       @state[k.to_i] = v['state']
     end
   end
@@ -195,11 +200,11 @@ end
 
 def make_dimmer_call(light, intensity)
   if MODE == 'openhab'
-    { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
-      post_fields: [color_of(light), saturation_of(light), intensity].to_hsl }
+    {url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}",
+     post_fields: [color_of(light), saturation_of(light), intensity].to_hsl}
   else
-    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
-      post_fields: { 'bri' => intensity }.to_json }
+    {url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state",
+     post_fields: {'bri' => intensity}.to_json}
   end
 rescue
   nil
@@ -207,11 +212,11 @@ end
 
 def make_color_call(light, values)
   if MODE == 'openhab'
-    { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
-      post_fields: values } 
+    {url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}",
+     post_fields: values}
   else
-    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
-      post_fields: { 'xy': values }.to_json }
+    {url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state",
+     post_fields: {'xy': values}.to_json}
   end
 rescue
   nil
@@ -220,29 +225,30 @@ end
 def make_power_call(light, on_state)
   if MODE == 'openhab'
     if type_of(light) == 'echo'
-      { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
-        post_fields: (on_state ? "PLAY" : "PAUSE" ) }
+      {url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}",
+       post_fields: (on_state ? "PLAY" : "PAUSE")}
     else
-      { url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}", 
-        post_fields: (on_state ? "ON" : "OFF" ) }
+      {url: "#{CONFIGURATION['openhab_url']}/rest/items/#{openhab_mapping_for(light)}",
+       post_fields: (on_state ? "ON" : "OFF")}
     end
   else
     set_brightness(light, 0) if !on_state
-    { url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state", 
-      post_fields: { 'on': on_state }.to_json } 
+    {url: "#{CONFIGURATION['ha_bridge_url']}/api/#{CONFIGURATION['ha_bridge_username']}/lights/#{light}/state",
+     post_fields: {'on': on_state}.to_json}
   end
 rescue
   nil
 end
 
 def parallel_calls(datas, client_key)
-  if datas 
+  if datas
     m = Curl::Multi.new
-    datas.compact.each do |data|
+    datas.flatten.compact.each do |data|
+      puts "Curling #{data.class}" if DEBUG
       c = Curl::Easy.http_post(data[:url]) do |curl|
-	curl.method('post')
+        curl.method('post')
         curl.follow_location = true
-	curl.post_body = data[:post_fields]
+        curl.post_body = data[:post_fields]
         curl.headers['Content-Type'] = 'text/plain'
       end
       m.add(c)
@@ -252,112 +258,121 @@ def parallel_calls(datas, client_key)
   end
 end
 
-def perform_action_for(key, code = 0)
-  bindings = CONFIGURATION['keyboard_bindings'].select { |item| item['key'] == key || (item['key'].is_a?(Array) && item['key'].include?(key)) }
-  actions = []
-  bindings.each do |binding|
-    if code == 0 # binding['repeatable'] # TODO: repeating requires awareness of when the key goes down and when up
-      puts "Executing: #{binding['name']}" if binding['name'] && DEBUG
-      if binding['action'] == 'on' || binding['action'] == 'off' 
-        get_state
-        actions = binding['lights'].collect do |light| 
-          set_on_off(light, binding['action'] == 'on')
-          make_power_call(light, binding['action'] == 'on')  
-        end
-      elsif binding['action'] == 'dim'
-        get_state
-        actions = binding['lights'].collect do |light| 
-          t_bri = brightness_of(light) + (binding['value']  || 0.5)
-          set_brightness(light, min_max(t_bri, 0, MAX_BRIGHTNESS))
-          make_dimmer_call(light, brightness_of(light).to_i)
-        end 
-      elsif binding['action'] == 'dim_multiply'
-        get_state
-        actions = binding['lights'].collect do |light| 
-          t_bri = brightness_of(light) * (binding['value'] || 0.5)
-          set_brightness(light, min_max(t_bri, (binding['value'].to_f >= 1 ? 16 : 0), MAX_BRIGHTNESS)) # if binding-value is > 1, we mean to raise the brightness, so never let the outcome be 0
-          make_dimmer_call(light, brightness_of(light))
-        end 
-      elsif binding['action'] == 'random'
-        actions = binding['lights'].collect { |light| make_color_call(light, random_color(light)) }
-      elsif binding['action'] == 'white' || binding['action'] == 'color'
-        if MODE == 'ha_bridge'
-          col = [0.33333333333, 0.33333333333] 
-          if binding['action'] == 'color'
-            col[0] = binding['x'] if binding['x'] 
-            col[1] = binding['y'] if binding['y'] 
-          end
-        elsif MODE == 'openhab'
-          col = "0,0,100"
-        end
+def action_item(binding, device_name)
+  
+  if (binding['except'].nil? || !binding['except'].to_a.include?(device_name)) && (binding['only'].nil? || binding['only'].to_a.include?(device_name))
+  puts "Executing: #{binding['name']} from #{device_name}" if binding['name'] && DEBUG
 
-        get_state
-        actions = binding['lights'].collect do |light| 
-          if has_color?(light)
-            if MODE == 'openhab' && binding['action'] == 'color'
-              h = binding['h'] ? binding['h'] : color_of(light)
-              s = binding['s'] ? binding['s'] : saturation_of(light)
-              l = binding['l'] ? binding['l'] : brightness_of(light)
-              col = [h,s,l].to_hsl
-            end
-            make_color_call(light, col)
-          elsif binding['switches_on']
-            make_power_call(light, true)
-          end
-        end.compact
-      elsif binding['action'] == 'toggle'
-        # Generally you wouldn't want to actually toggle everything, but rather set them all to the same thing.
-        # So, this determines first if any of the lights are currently on, and if so, it turns them off.
-        # Otherwise it turns them all on.
-        get_state
-        anything_on = binding['lights'].any? { |light| is_on?(light) }
-        binding['lights'].each { |light| set_on_off(light, !anything_on) }
-        actions = binding['lights'].collect { |light| make_power_call(light, !anything_on) } 
-      elsif binding['action'] == 'rotate'
-        get_state
-        target_lights = (binding['reversed'] ? binding['lights'].reverse : binding['lights'])
-        values = all_values_of(target_lights.last)
-        actions = target_lights.collect do |light| 
-          new_values = values
-          values = all_values_of(light)
-          set_values(light, new_values)
-          make_color_call(light, MODE == 'openhab' ? new_values.to_hsl : new_values)
-        end
-      elsif binding['action'] == 'custom'
-        new_state = binding['body']
-        if binding['state_url']
-          puts "Custom action #{binding['eval']}" if DEBUG
-          state = JSON.parse(Curl.send((binding['state_method'] || 'get').to_sym, binding['state_url']).body)[(binding['state_variable'] || 'state')]
-	  puts "Current state is #{state}" if DEBUG
-          new_state = eval(binding['eval'])
-        end
-        puts "New state will be #{new_state}" if DEBUG
-        chain = binding['chain'] ? binding['chain'] : [binding] 
-        chain.each do |item|
-          if item['url']
-		  Curl.send((item['method'] || 'post').to_sym, item['url'], (item['body'] || new_state).to_s) { |c| c.headers['Content-Type'] = 'text/plain' }
-          elsif item['exec']
-            system(item['exec'])
-          end
-          sleep(item['delay'] || 0.1)
-        end
-      end
+  if binding['action'] == 'reroute'
+    perform_action_for(binding['substitute'], 0, device_name)
+  elsif binding['action'] == 'on' || binding['action'] == 'off'
+    get_state
+    binding['lights'].map do |light|
+      set_on_off(light, binding['action'] == 'on')
+      make_power_call(light, binding['action'] == 'on')
     end
+  elsif binding['action'] == 'dim'
+    get_state
+    binding['lights'].map do |light|
+      t_bri = brightness_of(light) + (binding['value'] || 0.5)
+      set_brightness(light, min_max(t_bri, 0, MAX_BRIGHTNESS))
+      make_dimmer_call(light, brightness_of(light).to_i)
+    end
+  elsif binding['action'] == 'dim_multiply'
+    get_state
+    binding['lights'].map do |light|
+      t_bri = brightness_of(light) * (binding['value'] || 0.5)
+      set_brightness(light, min_max(t_bri, (binding['value'].to_f >= 1 ? 16 : 0), MAX_BRIGHTNESS)) # if binding-value is > 1, we mean to raise the brightness, so never let the outcome be 0
+      make_dimmer_call(light, brightness_of(light))
+    end
+  elsif binding['action'] == 'random'
+    get_state
+    binding['lights'].map { |light| make_color_call(light, random_color(light)) }
+  elsif binding['action'] == 'white' || binding['action'] == 'color'
+    if MODE == 'ha_bridge'
+      col = [0.33333333333, 0.33333333333]
+      if binding['action'] == 'color'
+        col[0] = binding['x'] if binding['x']
+        col[1] = binding['y'] if binding['y']
+      end
+    elsif MODE == 'openhab'
+      col = "0,0,100"
+    end
+
+    get_state
+    binding['lights'].map do |light|
+      if has_color?(light) && MODE == 'openhab' && type_of(light) == 'color'
+        if binding['action'] == 'white'
+          col = "0,0,100"
+        else
+          h = binding['h'] ? binding['h'] : color_of(light)
+          s = binding['s'] ? binding['s'] : saturation_of(light)
+          l = binding['l'] ? binding['l'] : brightness_of(light)
+          col = [h, s, l].to_hsl
+        end
+        make_color_call(light, col)
+      elsif binding['switches_on']
+        make_power_call(light, true)
+      end
+    end.compact
+  elsif binding['action'] == 'toggle'
+    # Generally you wouldn't want to actually toggle everything, but rather set them all to the same thing.
+    # So, this determines first if any of the lights are currently on, and if so, it turns them off.
+    # Otherwise it turns them all on.
+    get_state
+    anything_on = binding['lights'].any? { |light| is_on?(light) }
+    binding['lights'].each { |light| set_on_off(light, !anything_on) }
+    binding['lights'].map { |light| make_power_call(light, !anything_on) }
+  elsif binding['action'] == 'rotate'
+    get_state
+    target_lights = (binding['reversed'] ? binding['lights'].reverse : binding['lights'])
+    values = all_values_of(target_lights.last)
+    target_lights.map do |light|
+      new_values = values
+      values = all_values_of(light)
+      set_values(light, new_values)
+      make_color_call(light, MODE == 'openhab' ? new_values.to_hsl : new_values)
+    end
+  elsif binding['action'] == 'custom'
+    new_state = binding['body']
+    if binding['state_url']
+      puts "Custom action #{binding['eval']}" if DEBUG
+      state = JSON.parse(Curl.send((binding['state_method'] || 'get').to_sym, binding['state_url']).body)[(binding['state_variable'] || 'state')]
+      puts "Current state is #{state}" if DEBUG
+      new_state = eval(binding['eval'])
+    end
+    if binding['url'].is_a?(String)
+      target = [binding['url']]
+    else
+      target = binding['url']
+    end
+    target.each { |url|  Curl.send((binding['method'] || 'post').to_sym, url, (binding['body'] || new_state).to_s) { |c| c.headers['Content-Type'] = 'text/plain' } }
+    nil
+  elsif binding['action'] == 'exec'
+    system(item['exec'])
+    nil
+  elsif binding['chain']
+    binding['chain'].map { |chain| action_item(chain, device_name) }
+  end.to_a.compact
   end
-  actions
 end
 
-def min_max(val,min,max) 
+def perform_action_for(key, code = 0, device_name)
+  bindings = CONFIGURATION['keyboard_bindings'].select { |item| item['key'] == key || (item['key'].is_a?(Array) && item['key'].include?(key)) }
+  bindings.flat_map { |binding| action_item(binding, device_name) if code == 0 }.compact
+end
+
+def min_max(val, min, max)
   a = val < min ? min : val
   a > max ? max : a
 end
-          
+
 def mouse_xy(event)
   get_state
-  CONFIGURATION['mouse_binding']['lights'].collect do |light| 
+  CONFIGURATION['mouse_binding']['lights'].map do |light|
     new_x = new_y = 0
     if (event.code == "X")
-	    new_x = color_of(light)[0] + (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
+      new_x = color_of(light)[0] + (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
       new_y = color_of(light)[1]
     end
     if (event.code == "Y")
@@ -367,8 +382,8 @@ def mouse_xy(event)
     if CONFIGURATION['drift']
       new_x += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
       new_y += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
-    end 
-    new_xy = [min_max(new_x,0,1.0).to_i,min_max(new_y,0,1.0).to_i] 
+    end
+    new_xy = [min_max(new_x, 0, 1.0).to_i, min_max(new_y, 0, 1.0).to_i]
     set_color(light, new_xy)
     make_color_call(light, new_xy)
   end
@@ -376,7 +391,7 @@ end
 
 def mouse_hsl(event)
   get_state
-  CONFIGURATION['mouse_binding']['lights'].collect do |light| 
+  CONFIGURATION['mouse_binding']['lights'].map do |light|
     new_h = new_s = 0
     if (event.code == "X")
       new_h = color_of(light) + 360 * (event.data.value.to_f / CONFIGURATION['max_x_resolution'])
@@ -384,14 +399,14 @@ def mouse_hsl(event)
     end
     if (event.code == "Y")
       new_h = color_of(light)
-      new_s = saturation_of(light) + 100 * (event.data.value.to_f / CONFIGURATION['max_y_resolution']) 
+      new_s = saturation_of(light) + 100 * (event.data.value.to_f / CONFIGURATION['max_y_resolution'])
     end
     if CONFIGURATION['drift']
       new_h += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
       new_s += (rand() * CONFIGURATION['drift'] * 2) - CONFIGURATION['drift']
-    end 
-    new_hue = min_max(new_h,0,359.99)
-    new_saturation = min_max(new_s,0,100.0)
+    end
+    new_hue = min_max(new_h, 0, 359.99)
+    new_saturation = min_max(new_s, 0, 100.0)
     new_brightness = brightness_of(light)
 
     set_color(light, new_hue)
@@ -408,20 +423,21 @@ def input_monitor(device)
     rescue
     end
     DeviceInput.read_loop(dev) do |event|
-      puts "Received #{event}"
+      puts "Received #{event}" if DEBUG
       if event.type == 'EV_KEY' && !CONFIGURATION['keyboard_disabled'] # KEYBOARD DEVICES
-        if mapped_keys.include?(event.code)  
-          calls = parallel_calls(perform_action_for(event.code, event.data.value), 'keyboard')
+        puts "Received: #{event.code}" if DEBUG
+        if mapped_keys.include?(event.code)
+          calls = parallel_calls(perform_action_for(event.code, event.data.value, device), 'keyboard')
         else
           puts "#{event.code} is not a mapped key" if DEBUG
         end
       elsif !CONFIGURATION['mouse_disabled']
-        puts "Moved by #{event.data.value.to_f}" if (event.code == "X" || event.code == "Y") if DEBUG 
+        puts "Moved by #{event.data.value.to_f}" if (event.code == "X" || event.code == "Y") if DEBUG
         puts "Mouse action: #{event}" if DEBUG
 
         if event.code == 'Wheel'
-          parallel_calls(perform_action_for("Wheel#{event.data.value == -1 ? "Down" : "Up"}", 0), 'keyboard')
-        elsif (['X','Y'].include?(event.code))
+          parallel_calls(perform_action_for("Wheel#{event.data.value == -1 ? "Down" : "Up"}", 0, device), 'keyboard')
+        elsif !CONFIGURATION['mouse_movements_disabled'] && (['X', 'Y'].include?(event.code))  
           if CONFIGURATION['mouse_effect'] == 'xy'
             calls = mouse_xy(event)
           elsif CONFIGURATION['mouse_effect'] != 'none'
@@ -441,7 +457,7 @@ def start
   puts "Bound keys: #{mapped_keys.join(",")}" if DEBUG
   threads = []
   DEVICES.each_index do |i|
-    threads.push(Thread.new(i) do 
+    threads.push(Thread.new(i) do
       puts "Adding device #{DEVICES[i]}" if DEBUG
       loop do
         begin
